@@ -22,6 +22,13 @@ RUN printf '#!/bin/sh\nexit 0\n' > /root/.dotnet/tools/vp \
 # (packages like Ivy.Widgets.AnimatedStatusLabel may not yet be on nuget.org)
 RUN git clone --depth 1 https://github.com/Ivy-Interactive/Ivy-Framework /Ivy-Framework
 
+# Node.js: needed to build Ivy-Framework's frontend (Ivy.csproj requires dist/.build-stamp)
+COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
+COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
+
+RUN cd /Ivy-Framework/src/frontend && npm install && npm run build
+
 WORKDIR /src
 COPY . .
 
