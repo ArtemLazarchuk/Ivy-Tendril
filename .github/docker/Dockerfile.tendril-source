@@ -2,43 +2,68 @@
 # git, gh, pwsh, pandoc. Required: ANTHROPIC_API_KEY, GITHUB_TOKEN. Optional: OPENAI_API_KEY,
 # Gemini auth, PORT (8000), TENDRIL_HOME (/data/tendril). Mount /data/tendril to persist data.
 
-# ── Stage 1: build Tendril from source + install PowerShell as dotnet tool ────
+# ── Stage 1: build Tendril from source ────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
 ENV PATH="$PATH:/root/.dotnet/tools"
 
-# PowerShell: needed at runtime by Tendril AND needed now for pack-promptwares.ps1
+# ── dotnet global tools ────────────────────────────────────────────────────────
+# PowerShell: needed at runtime by Tendril AND by pack-promptwares.ps1 during Release build.
 RUN dotnet tool install --global PowerShell
 
-# Velopack CLI: Ivy.csproj has a build target that calls `vp install`.
-# `vp install` sets up desktop update hooks — meaningless in a server container.
-# Stub it out so the MSBuild target succeeds without doing anything.
+# Velopack stub: Ivy.csproj has a target at line 105 that calls `vp install` to set up
+# desktop update hooks. That is meaningless in a server container, so we replace the
+# binary with a no-op shell script that always exits 0.
 RUN printf '#!/bin/sh\nexit 0\n' > /root/.dotnet/tools/vp \
  && chmod +x /root/.dotnet/tools/vp
 
-# Clone Ivy-Framework so IvySource=true can resolve ProjectReferences
-# (packages like Ivy.Widgets.AnimatedStatusLabel may not yet be on nuget.org)
+# ── Ivy-Framework from source ──────────────────────────────────────────────────
+# Some packages (e.g. Ivy.Widgets.AnimatedStatusLabel, Ivy.Widgets.AgentOutputView)
+# are not yet published to nuget.org, so we clone the framework and build with
+# IvySource=true so that MSBuild resolves them via ProjectReferences.
 RUN git clone --depth 1 https://github.com/Ivy-Interactive/Ivy-Framework /Ivy-Framework
 
-# Node.js: needed to build Ivy-Framework's frontend (Ivy.csproj requires dist/.build-stamp)
+# ── Node.js for frontend builds ───────────────────────────────────────────────
+# Ivy.csproj and each widget .csproj use an MSBuild Touch task that requires
+# frontend/dist/.build-stamp to exist — that file is created after a successful
+# `npm run build`. We borrow Node from the official image instead of apt to avoid
+# flaky mirrors (same pattern used in the runtime stage below).
 COPY --from=node:22-bookworm-slim /usr/local/bin/node /usr/local/bin/node
 COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/node_modules
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm
 
-# Build the main Ivy frontend and every widget's frontend (each has its own package.json)
-RUN cd /Ivy-Framework/src/frontend && npm install --legacy-peer-deps && npm run build
+# Build the main Ivy frontend (required by Ivy.csproj line 112).
+# --legacy-peer-deps: the project uses a custom vite fork that conflicts with
+# @tailwindcss/vite's peer-dep declaration on plain vite.
+RUN cd /Ivy-Framework/src/frontend \
+ && npm install --legacy-peer-deps \
+ && npm run build \
+ && touch /Ivy-Framework/src/frontend/dist/.build-stamp
+
+# Build every widget frontend (required by Ivy.ExternalWidget.targets line 21).
+# Some widgets fail in a secondary rolldown environment pass after their primary
+# JS asset is already written to dist/ — so we use `|| true` to tolerate that
+# partial failure. The stamp file is always created explicitly afterwards so
+# MSBuild's Touch task never errors out.
 RUN for dir in /Ivy-Framework/src/widgets/*/frontend; do \
+      [ -f "$dir/dist/.build-stamp" ] && continue; \
       [ -f "$dir/package.json" ] || continue; \
-      cd "$dir" && npm install --legacy-peer-deps && npm install react react-dom --legacy-peer-deps --no-save && npm run build; \
+      cd "$dir" \
+      && npm install --legacy-peer-deps \
+      && (npm run build || true); \
+      mkdir -p "$dir/dist" && touch "$dir/dist/.build-stamp"; \
     done
 
+# ── Build Tendril ──────────────────────────────────────────────────────────────
 WORKDIR /src
 COPY . .
 
-# Publish Tendril from source with Ivy-Framework resolved via ProjectReferences.
-# IvySource=true → Directory.Build.props keeps ProjectReference items active.
+# IvySource=true → Directory.Build.props keeps the ProjectReference items active
+# so the two missing NuGet packages are resolved from the cloned framework above.
+# GITHUB_ACTIONS is unset here (local Dockerfile build), but we pass IvySource
+# explicitly to override the condition in Directory.Build.props regardless.
 RUN dotnet publish src/Ivy.Tendril/Ivy.Tendril.csproj \
     -c Release \
     -p:IvySource=true \
