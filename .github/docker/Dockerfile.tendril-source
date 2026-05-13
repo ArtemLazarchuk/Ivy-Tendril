@@ -13,9 +13,10 @@ ENV PATH="$PATH:/root/.dotnet/tools"
 RUN dotnet tool install --global PowerShell
 
 # Velopack CLI: Ivy.csproj has a build target that calls `vp install`.
-# The current NuGet global tool package is `vpk`; symlink it as `vp` for backward compat.
-RUN dotnet tool install --global vpk \
- && ln -s /root/.dotnet/tools/vpk /root/.dotnet/tools/vp
+# `vp install` sets up desktop update hooks — meaningless in a server container.
+# Stub it out so the MSBuild target succeeds without doing anything.
+RUN printf '#!/bin/sh\nexit 0\n' > /root/.dotnet/tools/vp \
+ && chmod +x /root/.dotnet/tools/vp
 
 # Clone Ivy-Framework so IvySource=true can resolve ProjectReferences
 # (packages like Ivy.Widgets.AnimatedStatusLabel may not yet be on nuget.org)
