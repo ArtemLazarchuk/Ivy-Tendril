@@ -12,15 +12,18 @@ ENV PATH="$PATH:/root/.dotnet/tools"
 # PowerShell: needed at runtime by Tendril AND needed now for pack-promptwares.ps1
 RUN dotnet tool install --global PowerShell
 
+# Clone Ivy-Framework so IvySource=true can resolve ProjectReferences
+# (packages like Ivy.Widgets.AnimatedStatusLabel may not yet be on nuget.org)
+RUN git clone --depth 1 https://github.com/Ivy-Interactive/Ivy-Framework /Ivy-Framework
+
 WORKDIR /src
 COPY . .
 
-# Publish Tendril from source.
-# Publishing=true → Directory.Build.props sets IvySource=false → Ivy Framework
-# comes from NuGet (no need to clone Ivy-Framework). Our local changes are baked in.
+# Publish Tendril from source with Ivy-Framework resolved via ProjectReferences.
+# IvySource=true → Directory.Build.props keeps ProjectReference items active.
 RUN dotnet publish src/Ivy.Tendril/Ivy.Tendril.csproj \
     -c Release \
-    -p:Publishing=true \
+    -p:IvySource=true \
     -o /app
 
 # ── Stage 2: runtime image with all CLI dependencies ──────────────────────────
