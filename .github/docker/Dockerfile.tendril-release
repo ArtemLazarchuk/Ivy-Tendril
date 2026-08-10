@@ -69,14 +69,13 @@ RUN git config --global --add safe.directory '*' \
 RUN echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/tendril/.dotnet/tools"' \
     > /etc/profile.d/tendril-path.sh
 
-# Pre-populate /data/tendril with config.yaml BEFORE VOLUME so the file survives
-# into the image layer. When Sliplane mounts a fresh volume the mount replaces this,
-# but for staging deploys (no volume) Tendril finds the file and skips the setup wizard.
 RUN mkdir -p /data/tendril && chown tendril:tendril /data/tendril
-COPY --chown=tendril:tendril src/Ivy.Tendril/example.config.yaml /data/tendril/config.yaml
 
-# Default config template (kept for reference / manual installs)
+# example.config.yaml is copied to TENDRIL_HOME by entrypoint if no config.yaml exists yet
 COPY src/Ivy.Tendril/example.config.yaml /etc/tendril/example.config.yaml
+COPY .github/docker/tendril-entrypoint.sh /usr/local/bin/tendril-entrypoint.sh
+RUN chmod +x /usr/local/bin/tendril-entrypoint.sh \
+ && chown tendril:tendril /etc/tendril/example.config.yaml
 
 VOLUME ["/data/tendril"]
 
@@ -84,4 +83,4 @@ EXPOSE 8000
 
 USER tendril
 
-CMD ["tendril", "--web"]
+ENTRYPOINT ["/usr/local/bin/tendril-entrypoint.sh"]
