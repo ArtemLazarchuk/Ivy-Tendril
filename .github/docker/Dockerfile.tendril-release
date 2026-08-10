@@ -72,8 +72,12 @@ RUN echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/
 # Ensure tendril user owns the data volume mount point
 RUN mkdir -p /data/tendril && chown tendril:tendril /data/tendril
 
-# Default config template (copied to TENDRIL_HOME on first start by Tendril itself)
+# Default config — /etc/tendril/config.yaml is used as TENDRIL_HOME for staging deploys
+# (no volume needed: data lives in the container, wizard is skipped on first start)
 COPY src/Ivy.Tendril/example.config.yaml /etc/tendril/example.config.yaml
+RUN cp /etc/tendril/example.config.yaml /etc/tendril/config.yaml \
+ && chmod 664 /etc/tendril/config.yaml \
+ && chown tendril:tendril /etc/tendril/config.yaml
 
 VOLUME ["/data/tendril"]
 
