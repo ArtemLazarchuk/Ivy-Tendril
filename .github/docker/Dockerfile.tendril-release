@@ -69,10 +69,13 @@ RUN git config --global --add safe.directory '*' \
 RUN echo 'export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/tendril/.dotnet/tools"' \
     > /etc/profile.d/tendril-path.sh
 
-# Ensure tendril user owns the data volume mount point
+# Pre-populate /data/tendril with config.yaml BEFORE VOLUME so the file survives
+# into the image layer. When Sliplane mounts a fresh volume the mount replaces this,
+# but for staging deploys (no volume) Tendril finds the file and skips the setup wizard.
 RUN mkdir -p /data/tendril && chown tendril:tendril /data/tendril
+COPY --chown=tendril:tendril src/Ivy.Tendril/example.config.yaml /data/tendril/config.yaml
 
-# Default config template (copied to TENDRIL_HOME on first start by Tendril itself)
+# Default config template (kept for reference / manual installs)
 COPY src/Ivy.Tendril/example.config.yaml /etc/tendril/example.config.yaml
 
 VOLUME ["/data/tendril"]

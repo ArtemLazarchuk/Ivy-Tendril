@@ -19,6 +19,7 @@ public static class Constants
     public const int Agent = 80;
     public const int ReviewAction = 85;
     public const int Help = 100;
+    public const int NewExperience = 105;
     public const int Onboarding = 110;
 
     public const string DocsUrl = "https://tendril.ivy.app";
